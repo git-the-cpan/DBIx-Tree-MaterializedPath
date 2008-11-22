@@ -12,16 +12,13 @@ DBIx::Tree::MaterializedPath - fast DBI queries and updates on "materialized pat
 
 =head1 VERSION
 
-Version 0.01
+Version 0.02
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.01');
+use version 0.74; our $VERSION = qv('0.02');
 
 =head1 SYNOPSIS
-
-This module implements database storage for a "materialized path"
-parent/child tree.
 
     use DBIx::Tree::MaterializedPath;
 
@@ -53,12 +50,17 @@ parent/child tree.
     # Access arbitrary node metadata:
     print $children[0]->data->{name};    # 'The Andromeda Strain'
 
+=head1 DESCRIPTION
+
+This module implements database storage for a "materialized path"
+parent/child tree.
+
 Most methods (other than C<new()>) can act on any node in the tree,
 including the root node.  For documentation on additional methods
 see
 L<DBIx::Tree::MaterializedPath::Node|DBIx::Tree::MaterializedPath::Node>.
 
-=head1 BACKGROUND
+=head2 BACKGROUND
 
 This distribution was inspired by Dan Collis-Puro's
 L<DBIx::Tree::NestedSet|DBIx::Tree::NestedSet> modules
@@ -166,9 +168,9 @@ to be non-NULL.
 
 sub new
 {
-    my $class = shift;
+    my ($class, @args) = @_;
 
-    my $options = ref $_[0] eq 'HASH' ? shift : {@_};
+    my $options = ref $args[0] eq 'HASH' ? $args[0] : {@args};
 
     my $self = bless {}, ref($class) || $class;
 
@@ -203,23 +205,23 @@ sub _init
     croak 'Missing required parameter: dbh' unless $dbh;
     croak 'Invalid dbh: is not a "DBI::db"' unless ref($dbh) eq 'DBI::db';
 
-    local $dbh->{PrintError} = 0;
-    local $dbh->{RaiseError} = 1;
+    local $dbh->{PrintError} = 0;    ## no critic (Variables::ProhibitLocalVars)
+    local $dbh->{RaiseError} = 1;    ## no critic (Variables::ProhibitLocalVars)
 
     # Make sure the tree table exists in the database:
     my $table = $self->{_table_name};
-    eval { $dbh->do("select count(*) from $table limit 1") };
-    croak qq{Table "$table" does not exist} if $@;
+    eval { $dbh->do("select count(*) from $table limit 1"); 1; }
+      or do { croak qq{Table "$table" does not exist}; };
 
     # Make sure the column exists in the tree table:
     my $id_col = $self->{_id_column_name};
-    eval { $dbh->do("select $id_col from $table limit 1") };
-    croak qq{Column "$id_col" does not exist} if $@;
+    eval { $dbh->do("select $id_col from $table limit 1"); 1; }
+      or do { croak qq{Column "$id_col" does not exist}; };
 
     # Make sure the column exists in the tree table:
     my $path_col = $self->{_path_column_name};
-    eval { $dbh->do("select $path_col from $table limit 1") };
-    croak qq{Column "$path_col" does not exist} if $@;
+    eval { $dbh->do("select $path_col from $table limit 1"); 1; }
+      or do { croak qq{Column "$path_col" does not exist}; };
 
     # Check if DB is capable of transactions:
     #
@@ -230,24 +232,31 @@ sub _init
     #
     my $started_a_new_transaction = 0;
     eval {
+        ## no critic (Variables::ProhibitLocalVars)
         local $dbh->{RaiseError} = 0;
+        ## use critic
         $started_a_new_transaction = $dbh->begin_work;
-    };
-    $self->{_can_do_transactions} = $@ ? 0 : 1;
+        $self->{_can_do_transactions} = 1;
+        1;
+    } or do { $self->{_can_do_transactions} = 0; };
+
+    ## no critic (ErrorHandling::RequireCheckingReturnValueOfEval)
     eval { $dbh->rollback } if $started_a_new_transaction;
+    ## use critic
 
     # Load the root node:
     my $root_node_path = $self->_map_path('1');
-    eval { $self->_load_from_db_using_path($root_node_path) };
-    if ($@)
+    eval { $self->_load_from_db_using_path($root_node_path); 1; } or do
     {
-        die $@ unless $@ =~ /No row/;
-        die $@ unless $self->{_auto_create_root};
+        croak $@ unless $@ =~ /No\s+row/msx;
+        croak $@ unless $self->{_auto_create_root};
 
         # If we got here, the root node was not found and
         # auto_create_root is true, so create the node
         $self->_insert_into_db_from_hashref({$path_col => $root_node_path});
-    }
+    };
+
+    return;
 }
 
 =head2 clone
@@ -279,34 +288,40 @@ sub clone
 #
 sub _do_transaction
 {
-    my $self = shift;
-    my $code = shift;
+    my ($self, $code, @args) = @_;
 
     unless ($self->{_can_do_transactions})
     {
-        $code->(@_);
+        $code->(@args);
         return;
     }
 
     my $dbh = $self->{_dbh};
-    local $dbh->{PrintError} = 0;
-    local $dbh->{RaiseError} = 1;
+    local $dbh->{PrintError} = 0;    ## no critic (Variables::ProhibitLocalVars)
+    local $dbh->{RaiseError} = 1;    ## no critic (Variables::ProhibitLocalVars)
 
-    # begin_work() may croak if we're already in a transaction
-    # or if transactions are not supported:
+    # If RaiseError is true, begin_work() will:
+    #     return true if a new transaction was started
+    #     croak if already in a transaction
+    #     croak if transactions not supported
+    #
     my $started_a_new_transaction = 0;
-    eval { $started_a_new_transaction = $dbh->begin_work };
+    eval { $started_a_new_transaction = $dbh->begin_work } or do { };
 
     eval {
-        $code->(@_);
+        $code->(@args);
         $dbh->commit if $started_a_new_transaction;
-    };
-    if ($@)
+        1;
+      } or do
     {
         my $msg = $@;
+        ## no critic (ErrorHandling::RequireCheckingReturnValueOfEval)
         eval { $dbh->rollback } if $started_a_new_transaction;
-        die $msg;
-    }
+        ## use critic
+        croak $msg;
+    };
+
+    return;
 }
 
 ###################################################################
@@ -330,7 +345,8 @@ sub _cached_sth
 #   2) Replace the existing handle in the DBI cache with the
 #      newly-generated one
 #
-use constant STH_CACHE_REPLACE => 3;
+use Readonly;
+Readonly::Scalar my $STH_CACHE_REPLACE => 3;
 
 sub _create_sth
 {
@@ -338,10 +354,10 @@ sub _create_sth
 
     my $dbh = $self->{_dbh};
 
-    local $dbh->{PrintError} = 0;
-    local $dbh->{RaiseError} = 1;
+    local $dbh->{PrintError} = 0;    ## no critic (Variables::ProhibitLocalVars)
+    local $dbh->{RaiseError} = 1;    ## no critic (Variables::ProhibitLocalVars)
 
-    my $sth = $dbh->prepare_cached($sql, undef, STH_CACHE_REPLACE);
+    my $sth = $dbh->prepare_cached($sql, undef, $STH_CACHE_REPLACE);
 
     return $sth;
 }
@@ -360,7 +376,7 @@ sub _cached_sql
     unless ($sql)
     {
         my $func =
-          ($sql_key =~ /^VALIDATE_/)
+          ($sql_key =~ /^VALIDATE_/msx)
           ? '_cached_sql_VALIDATE'
           : "_cached_sql_$sql_key";
         $sql = $self->$func($args);
@@ -436,10 +452,6 @@ L<http://www.dbazine.com/oracle/or-articles/tropashko4>
 An article about implementing nested set and static hierarchy trees:
 L<http://grzm.com/fornow/archives/2004/07/10/static_hierarchies>
 
-=head1 AUTHOR
-
-Larry Leszczynski, C<< <larryl at cpan.org> >>
-
 =head1 BUGS
 
 Please report any bugs or feature requests to
@@ -476,6 +488,10 @@ L<http://cpanratings.perl.org/d/DBIx-Tree-MaterializedPath>
 L<http://search.cpan.org/dist/DBIx-Tree-MaterializedPath>
 
 =back
+
+=head1 AUTHOR
+
+Larry Leszczynski, C<< <larryl at cpan.org> >>
 
 =head1 COPYRIGHT & LICENSE
 

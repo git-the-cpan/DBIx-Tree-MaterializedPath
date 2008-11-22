@@ -147,8 +147,7 @@ SKIP:
     #####
 
     $msg = '_do_transaction() with bad code';
-    eval
-    {
+    eval {
         $tree->_do_transaction(sub { die 'BADNESS' });
     };
     like($@, qr/^BADNESS at /, $msg);

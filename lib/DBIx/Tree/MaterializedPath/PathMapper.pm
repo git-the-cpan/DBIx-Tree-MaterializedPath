@@ -6,22 +6,28 @@ use strict;
 use Carp;
 use SQL::Abstract;
 
+use Readonly;
+
+Readonly::Scalar my $EMPTY_STRING => q{};
+
+Readonly::Scalar my $DEFAULT_CHUNKSIZE => 5;
+Readonly::Scalar my $MAX_CHUNKSIZE     => 8;
+
+my $re_period = qr/[.]/msx;
+
 =head1 NAME
 
 DBIx::Tree::MaterializedPath::PathMapper - manipulates paths for "materialized path" trees
 
 =head1 VERSION
 
-Version 0.01
+Version 0.02
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.01');
+use version 0.74; our $VERSION = qv('0.02');
 
 =head1 SYNOPSIS
-
-This module manipulates path representations for DBIx::Tree::MaterializedPath
-"materialized path" trees.
 
     use DBIx::Tree::MaterializedPath::PathMapper;
 
@@ -31,6 +37,11 @@ This module manipulates path representations for DBIx::Tree::MaterializedPath
     my $path_in_db = $mapper->map('1.3.2');
 
     my $path = $mapper->unmap($path_in_db);    # "1.3.2"
+
+=head1 DESCRIPTION
+
+This module manipulates path representations for DBIx::Tree::MaterializedPath
+"materialized path" trees.
 
 =head2 PATH REPRESENTATIONS
 
@@ -103,9 +114,9 @@ Returns a path mapping object.
 
 sub new
 {
-    my $class = shift;
+    my ($class, @args) = @_;
 
-    my $options = ref $_[0] eq 'HASH' ? shift : {@_};
+    my $options = ref $args[0] eq 'HASH' ? $args[0] : {@args};
 
     my $self = bless {}, ref($class) || $class;
     $self->_init($options);
@@ -119,12 +130,15 @@ sub _init
     $self->{_version} = '1';    # must be single character
 
     # Size of storage format path chunks:
-    $self->{_chunksize} = $options->{chunksize} || 5;
-    $self->{_chunksize} = 8 if $self->{_chunksize} > 8;
+    $self->{_chunksize} = $options->{chunksize} || $DEFAULT_CHUNKSIZE;
+    $self->{_chunksize} = $MAX_CHUNKSIZE
+      if $self->{_chunksize} > $MAX_CHUNKSIZE;
 
     $self->{_sqlmaker} = SQL::Abstract->new();
 
     $self->{_cache} = {};
+
+    return;
 }
 
 #
@@ -191,14 +205,15 @@ format stored in the database.
 
 =cut
 
-sub map
+sub map    ## no critic (Subroutines::ProhibitBuiltinHomonyms)
 {
     my ($self, $hrpath) = @_;
 
     my $chunksize = $self->{_chunksize};
     my $format    = '%0' . $chunksize . 'x';
 
-    my $pathpart = join('', map { sprintf($format, $_) } split(/[.]/, $hrpath));
+    my $pathpart = join $EMPTY_STRING,
+      map { sprintf($format, $_) } split($re_period, $hrpath);
 
     return $self->_map($chunksize, $pathpart);
 }
@@ -236,7 +251,7 @@ sub unmap
     my ($self,      $path)     = @_;
     my ($chunksize, $pathpart) = $self->_parse_path($path);
     my $format = "(A$chunksize)*";
-    my $hrpath = join '.', map { hex($_) } unpack($format, $pathpart);
+    my $hrpath = join q{.}, map { hex $_ } unpack($format, $pathpart);
     return $hrpath;
 }
 
@@ -255,7 +270,7 @@ sub _unmap_chunk
 
 Given a path to a node, return the path to its immediate parent.
 
-Returns the empty string if the input path represents the root node.
+Returns an empty string if the input path represents the root node.
 
 =cut
 
@@ -265,7 +280,7 @@ sub parent_path
 
     my ($chunksize, $pathpart) = $self->_parse_path($path);
 
-    return '' if $self->_is_root($chunksize, $pathpart);
+    return $EMPTY_STRING if $self->_is_root($chunksize, $pathpart);
 
     my $parentpathpart = substr($pathpart, 0, -$chunksize);
 
@@ -300,7 +315,7 @@ for the same parent.
 If I<$n> is specified, return the path to the nth next child.
 (I<$n> effectively defaults to 1.)
 
-Returns the empty string if the input path represents the root node.
+Returns an empty string if the input path represents the root node.
 
 =cut
 
@@ -311,7 +326,7 @@ sub next_child_path
 
     my ($chunksize, $pathpart) = $self->_parse_path($path);
 
-    return '' if $self->_is_root($chunksize, $pathpart);
+    return $EMPTY_STRING if $self->_is_root($chunksize, $pathpart);
 
     my $last_chunk = substr($path, -$chunksize);
     $last_chunk = $self->_unmap_chunk($last_chunk);
@@ -460,10 +475,10 @@ sub descendants_where_struct
 
     unless ($cache->{$key}->{$path_col}->{$path})
     {
-        my $like = $path . '%';
+        my $like = $path . q{%};
 
         $cache->{$key}->{$path_col}->{$path} =
-          {$path_col => [-and => {-like => $like}, {'!=' => $path}]};
+          {$path_col => [-and => {-like => $like}, {q{!=} => $path}]};
     }
 
     return $cache->{$key}->{$path_col}->{$path};
@@ -518,7 +533,7 @@ sub descendants_and_self_where
 {
     my ($self, $path_col, $path) = @_;
 
-    my $like = $path . '%';
+    my $like = $path . q{%};
 
     my $sqlmaker = $self->{_sqlmaker};
     my ($sql, @bind_params) = $sqlmaker->where({$path_col => {-like => $like}});
@@ -598,10 +613,6 @@ __END__
 
 L<DBIx::Tree::MaterializedPath|DBIx::Tree::MaterializedPath>
 
-=head1 AUTHOR
-
-Larry Leszczynski, C<< <larryl at cpan.org> >>
-
 =head1 BUGS
 
 Please report any bugs or feature requests to
@@ -638,6 +649,10 @@ L<http://cpanratings.perl.org/d/DBIx-Tree-MaterializedPath>
 L<http://search.cpan.org/dist/DBIx-Tree-MaterializedPath>
 
 =back
+
+=head1 AUTHOR
+
+Larry Leszczynski, C<< <larryl at cpan.org> >>
 
 =head1 COPYRIGHT & LICENSE
 

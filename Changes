@@ -1,5 +1,8 @@
 Revision history for DBIx-Tree-MaterializedPath
 
+0.02    2008-11-21
+        Added perlcritic test, and tweaked code to pass.
+
 0.01    2008-11-19
         First version, released on an unsuspecting world.
 

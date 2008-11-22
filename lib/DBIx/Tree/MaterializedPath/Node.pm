@@ -7,6 +7,10 @@ use Carp;
 use SQL::Abstract;
 use Scalar::Util qw(blessed);
 
+use Readonly;
+
+Readonly::Scalar my $EMPTY_STRING => q{};
+
 use DBIx::Tree::MaterializedPath::PathMapper;
 
 =head1 NAME
@@ -15,16 +19,25 @@ DBIx::Tree::MaterializedPath::Node - node objects for "materialized path" trees
 
 =head1 VERSION
 
-Version 0.01
+Version 0.02
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.01');
+use version 0.74; our $VERSION = qv('0.02');
 
 =head1 SYNOPSIS
 
+    my $node = DBIx::Tree::MaterializedPath::Node->new( $root );
+
+=head1 DESCRIPTION
+
 This module implements nodes for a "materialized path"
 parent/child tree.
+
+B<Note:> Normally nodes would not be created independently - create
+a tree first using
+L<DBIx::Tree::MaterializedPath|DBIx::Tree::MaterializedPath>
+and then create/manipulate its children.
 
 =head1 METHODS
 
@@ -34,11 +47,6 @@ parent/child tree.
 
 C<new()> initializes a node in the tree.
 
-B<Note:> Normally nodes would not be created independently - create
-a tree first using
-L<DBIx::Tree::MaterializedPath|DBIx::Tree::MaterializedPath>
-and then create/manipulate its children.
-
 C<new()> expects a single argument, which must be a
 L<DBIx::Tree::MaterializedPath|DBIx::Tree::MaterializedPath>
 object representing the root of the tree that this node belongs to.
@@ -47,14 +55,13 @@ object representing the root of the tree that this node belongs to.
 
 sub new
 {
-    my $class = shift;
+    my ($class, $root, @args) = @_;
 
-    my $root = shift;
     croak 'Missing tree root' unless $root;
     croak 'Invalid tree root: is not a "DBIx::Tree::MaterializedPath"'
       unless blessed($root) && $root->isa('DBIx::Tree::MaterializedPath');
 
-    my $options = ref $_[0] eq 'HASH' ? shift : {@_};
+    my $options = ref $args[0] eq 'HASH' ? $args[0] : {@args};
 
     my $self = bless {}, ref($class) || $class;
 
@@ -71,6 +78,8 @@ sub _init
 
     $self->{_deleted}  = 0;
     $self->{_node_sql} = {};
+
+    return;
 }
 
 =head2 is_root
@@ -210,6 +219,8 @@ sub _load_from_db_using_id
     my $sql     = $self->{_root}->_cached_sql($sql_key);
 
     $self->_load_from_db_using_sql($sql, $id);
+
+    return;
 }
 
 sub _load_from_db_using_path
@@ -220,6 +231,8 @@ sub _load_from_db_using_path
     my $sql     = $self->{_root}->_cached_sql($sql_key);
 
     $self->_load_from_db_using_sql($sql, $path);
+
+    return;
 }
 
 sub _load_id_from_db_using_path
@@ -230,6 +243,8 @@ sub _load_id_from_db_using_path
     my $sql     = $self->{_root}->_cached_sql($sql_key);
 
     $self->_load_from_db_using_sql($sql, $path);
+
+    return;
 }
 
 sub _load_from_db_using_sql
@@ -242,6 +257,8 @@ sub _load_from_db_using_sql
     $sth->finish;    # in case more than one row was returned
     croak qq{No row [$sql]} unless defined $row;
     $self->_load_from_hashref($row);
+
+    return;
 }
 
 sub _load_from_hashref
@@ -255,10 +272,12 @@ sub _load_from_hashref
 
     if ($ignore_empty_hash)
     {
-        return unless keys %$data;
+        return unless keys %{$data};
     }
 
     $self->{_data} = $data;
+
+    return;
 }
 
 sub _insert_into_db_from_hashref
@@ -275,8 +294,8 @@ sub _insert_into_db_from_hashref
       $sqlmaker->insert($self->{_root}->{_table_name}, $data);
 
     my $sth;
-    eval { $sth = $root->_cached_sth($sql); };
-    croak 'Node data (probably) contains invalid column name(s)' if $@;
+    eval { $sth = $root->_cached_sth($sql); 1; }
+      or do { croak 'Node data probably contains invalid column name(s)'; };
 
     $sth->execute(@bind_params);
 
@@ -285,6 +304,8 @@ sub _insert_into_db_from_hashref
 
     # Update in-memory copy to stay consistent with database:
     $self->_load_from_hashref($data);
+
+    return;
 }
 
 #
@@ -376,16 +397,16 @@ sub data
     if ($data)
     {
         croak 'Node data must be a HASHREF' unless ref($data) eq 'HASH';
-        croak 'Node data is empty' unless keys %$data;
+        croak 'Node data is empty' unless keys %{$data};
 
         my $root = $self->{_root};
 
         my $id_col = $root->{_id_column_name};
-        croak 'Node data cannot overwrite id column "$id_col"'
+        croak qq{Node data cannot overwrite id column "$id_col"}
           if exists $data->{$id_col};
 
         my $path_col = $root->{_path_column_name};
-        croak 'Node data cannot overwrite path column "$path_col"'
+        croak qq{Node data cannot overwrite path column "$path_col"}
           if exists $data->{$path_col};
 
         my $sqlmaker = $root->{_sqlmaker};
@@ -394,8 +415,8 @@ sub data
           $sqlmaker->update($root->{_table_name}, $data, $where);
 
         my $sth;
-        eval { $sth = $root->_cached_sth($sql); };
-        croak 'Node data (probably) contains invalid column name(s)' if $@;
+        eval { $sth = $root->_cached_sth($sql); 1; }
+          or do { croak 'Node data probably contains invalid column name(s)'; };
 
         $sth->execute(@bind_params);
 
@@ -454,9 +475,11 @@ hashrefs, e.g.:
 
 sub add_children
 {
-    my $self = shift;
-    croak 'No input data' unless defined $_[0];
-    my $children = ref $_[0] eq 'ARRAY' ? shift : [@_];
+    my ($self, @args) = @_;
+
+    croak 'No input data' unless defined $args[0];
+
+    my $children = ref $args[0] eq 'ARRAY' ? $args[0] : [@args];
 
     $self->_validate_new_children_data($children);
 
@@ -468,8 +491,8 @@ sub add_children
         ($nodes, $next_path) = $self->_add_children($next_path, $children);
     };
 
-    eval { $self->{_root}->_do_transaction($func); };
-    croak "add_children() aborted: $@" if $@;
+    eval { $self->{_root}->_do_transaction($func); 1; }
+      or do { croak "add_children() aborted: $@"; };
 
     return $nodes;
 }
@@ -519,16 +542,18 @@ hashrefs, e.g.:
 
 sub add_children_at_left
 {
-    my $self = shift;
-    croak 'No input data' unless defined $_[0];
-    my $children = ref $_[0] eq 'ARRAY' ? shift : [@_];
+    my ($self, @args) = @_;
+
+    croak 'No input data' unless defined $args[0];
+
+    my $children = ref $args[0] eq 'ARRAY' ? $args[0] : [@args];
 
     # Need to validate new children data first, so we don't
     # needlessly go through the trouble of reparenting existing
     # children if the input data is bad:
     $self->_validate_new_children_data($children);
 
-    my $num_new_children = scalar @$children;
+    my $num_new_children = scalar @{$children};
 
     my $descendants = $self->get_descendants();
 
@@ -547,7 +572,7 @@ sub add_children_at_left
         # Need to reparent any existing children first (i.e.
         # shift them to the right), so that the paths of the
         # newly-created children don't collide:
-        if (@$descendants)
+        if (@{$descendants})
         {
             $next_path =
               $mapper->next_child_path($next_path, $num_new_children);
@@ -574,8 +599,8 @@ sub add_children_at_left
           $self->_add_children($first_child_path, $children);
     };
 
-    eval { $root->_do_transaction($func); };
-    croak "add_children_at_left() aborted: $@" if $@;
+    eval { $root->_do_transaction($func); 1; }
+      or do { croak "add_children_at_left() aborted: $@"; };
 
     return $nodes;
 }
@@ -584,7 +609,7 @@ sub _validate_new_children_data
 {
     my ($self, $children) = @_;
 
-    croak 'Input children list is empty' unless @$children;
+    croak 'Input children list is empty' unless @{$children};
 
     my $root     = $self->{_root};
     my $id_col   = $root->{_id_column_name};
@@ -594,17 +619,20 @@ sub _validate_new_children_data
     # while checking each of the new children:
     my %columns = ();
 
-    foreach my $data (@$children)
+    foreach my $data (@{$children})
     {
         croak 'Node data must be a HASHREF' unless ref($data) eq 'HASH';
 
-        croak 'Node data cannot overwrite id column "$id_col"'
+        croak qq{Node data cannot overwrite id column "$id_col"}
           if exists $data->{$id_col};
 
-        croak 'Node data cannot overwrite path column "$path_col"'
+        croak qq{Node data cannot overwrite path column "$path_col"}
           if exists $data->{$path_col};
 
-        $columns{$_} = 1 foreach keys %$data;
+        foreach (keys %{$data})
+        {
+            $columns{$_} = 1;
+        }
     }
 
     # Make sure any metadata column names we encountered
@@ -613,11 +641,13 @@ sub _validate_new_children_data
 
     my @columns = sort keys %columns;
 
-    my $sql_key = 'VALIDATE_' . join('', @columns);
+    my $sql_key = 'VALIDATE_' . join($EMPTY_STRING, @columns);
     my $sql = $self->{_root}->_cached_sql($sql_key, \@columns);
 
-    eval { my $sth = $root->_cached_sth($sql); };
-    croak 'Node data (probably) contains invalid column name(s)' if $@;
+    eval { my $sth = $root->_cached_sth($sql); 1; }
+      or do { croak 'Node data probably contains invalid column name(s)'; };
+
+    return;
 }
 
 sub _add_children
@@ -630,10 +660,10 @@ sub _add_children
 
     my @nodes = ();
 
-    foreach my $data (@$children)
+    foreach my $data (@{$children})
     {
         my $child = DBIx::Tree::MaterializedPath::Node->new($root);
-        my $child_data = {%$data, $path_col => $next_path};
+        my $child_data = {%{$data}, $path_col => $next_path};
         $child->_insert_into_db_from_hashref($child_data);
         push @nodes, $child;
 
@@ -654,14 +684,14 @@ sub get_parent
 {
     my ($self) = @_;
 
-    return undef if $self->{_is_root};
+    return if $self->{_is_root};
 
     my $sql_key = 'SELECT_STAR_FROM_TABLE_WHERE_PATH_FINDS_PARENT';
 
     my ($sql, $bind_params) = $self->_cached_node_sql_info($sql_key);
 
     my $sth = $self->{_root}->_cached_sth($sql);
-    $sth->execute(@$bind_params);
+    $sth->execute(@{$bind_params});
 
     my $row = $sth->fetchrow_hashref();
     $sth->finish;    # in case more than one row was returned
@@ -684,6 +714,8 @@ sub _reparent
     my $path          = $self->_path;
     substr($path, 0, $prefix_length) = $parent_path;
     $self->_path($path);
+
+    return;
 }
 
 =head2 get_children
@@ -706,8 +738,9 @@ node.
 
 sub get_children
 {
-    my $self = shift;
-    my $options = ref $_[0] eq 'HASH' ? shift : {@_};
+    my ($self, @args) = @_;
+
+    my $options = ref $args[0] eq 'HASH' ? $args[0] : {@args};
 
     my $delay_load = $options->{delay_load} ? 1 : 0;
 
@@ -719,7 +752,7 @@ sub get_children
     my ($sql, $bind_params) = $self->_cached_node_sql_info($sql_key);
 
     my $sth = $self->{_root}->_cached_sth($sql);
-    $sth->execute(@$bind_params);
+    $sth->execute(@{$bind_params});
 
     my $rows = $sth->fetchall_arrayref({});    # fetch array of hashrefs
 
@@ -748,8 +781,9 @@ node.
 
 sub get_siblings
 {
-    my $self = shift;
-    my $options = ref $_[0] eq 'HASH' ? shift : {@_};
+    my ($self, @args) = @_;
+
+    my $options = ref $args[0] eq 'HASH' ? $args[0] : {@args};
 
     my $delay_load = $options->{delay_load} ? 1 : 0;
 
@@ -761,7 +795,7 @@ sub get_siblings
     my ($sql, $bind_params) = $self->_cached_node_sql_info($sql_key);
 
     my $sth = $self->{_root}->_cached_sth($sql);
-    $sth->execute(@$bind_params);
+    $sth->execute(@{$bind_params});
 
     my $rows = $sth->fetchall_arrayref({});    # fetch array of hashrefs
 
@@ -790,8 +824,8 @@ node.
 
 sub get_siblings_to_the_right
 {
-    my $self = shift;
-    return $self->_get_siblings_to_one_side('RIGHT', @_);
+    my ($self, @args) = @_;
+    return $self->_get_siblings_to_one_side('RIGHT', @args);
 }
 
 =head2 get_siblings_to_the_left
@@ -816,15 +850,15 @@ node.
 
 sub get_siblings_to_the_left
 {
-    my $self = shift;
-    return $self->_get_siblings_to_one_side('LEFT', @_);
+    my ($self, @args) = @_;
+    return $self->_get_siblings_to_one_side('LEFT', @args);
 }
 
 sub _get_siblings_to_one_side
 {
-    my $self    = shift;
-    my $side    = shift;
-    my $options = ref $_[0] eq 'HASH' ? shift : {@_};
+    my ($self, $side, @args) = @_;
+
+    my $options = ref $args[0] eq 'HASH' ? $args[0] : {@args};
 
     $side = 'RIGHT' unless $side eq 'LEFT';
 
@@ -838,7 +872,7 @@ sub _get_siblings_to_one_side
     my ($sql, $bind_params) = $self->_cached_node_sql_info($sql_key);
 
     my $sth = $self->{_root}->_cached_sth($sql);
-    $sth->execute(@$bind_params);
+    $sth->execute(@{$bind_params});
 
     my $rows = $sth->fetchall_arrayref({});    # fetch array of hashrefs
 
@@ -856,7 +890,7 @@ sub _nodes_from_hashrefs
 
     my @nodes = ();
 
-    foreach my $hashref (@$hashrefs)
+    foreach my $hashref (@{$hashrefs})
     {
         my $node = DBIx::Tree::MaterializedPath::Node->new($root);
         $node->_load_from_hashref($hashref, $delay_load);
@@ -925,8 +959,9 @@ node.
 
 sub get_descendants
 {
-    my $self = shift;
-    my $options = ref $_[0] eq 'HASH' ? shift : {@_};
+    my ($self, @args) = @_;
+
+    my $options = ref $args[0] eq 'HASH' ? $args[0] : {@args};
 
     my $delay_load = $options->{delay_load} ? 1 : 0;
 
@@ -938,7 +973,7 @@ sub get_descendants
     my ($sql, $bind_params) = $self->_cached_node_sql_info($sql_key);
 
     my $sth = $self->{_root}->_cached_sth($sql);
-    $sth->execute(@$bind_params);
+    $sth->execute(@{$bind_params});
 
     my $rows = $sth->fetchall_arrayref({});    # fetch array of hashrefs
 
@@ -950,68 +985,94 @@ sub get_descendants
     #    { id => 7, name => "f", path => "1.3.1.1" },
     #    { id => 6, name => "e", path => "1.3.2"   },
 
-    sub _add_descendant_nodes
-    {
-        my ($root, $path_col, $nodes, $rows, $prev_path, $prev_length,
-            $delay_load)
-          = @_;
-
-        my $node_children = undef;
-
-        while (@$rows)
-        {
-            my $path   = $rows->[0]->{$path_col};
-            my $length = length $path;
-
-            # If path length is less, we've gone back up
-            # a level in the tree:
-            if ($length < $prev_length)
-            {
-                return;
-            }
-
-            # If path length is greater, we've gone down
-            # a level in the tree:
-            elsif ($length > $prev_length)
-            {
-                _add_descendant_nodes($root, $path_col, $node_children, $rows,
-                                      $prev_path, $length, $delay_load);
-            }
-
-            # If path length is the same, we're adding
-            # siblings at the same level:
-            else
-            {
-                my $row = shift @$rows;
-
-                if ($row->{$path_col} eq $prev_path)
-                {
-                    carp "Danger! Found multiple rows with path <$path>";
-                }
-                else
-                {
-                    $prev_path = $row->{$path_col};
-                }
-
-                my $child = DBIx::Tree::MaterializedPath::Node->new($root);
-                $child->_load_from_hashref($row, $delay_load);
-                $node_children = [];
-                push @$nodes, {node => $child, children => $node_children};
-            }
-        }
-    }
-
     my @nodes = ();
-    if (@$rows)
+    if (@{$rows})
     {
         my $root     = $self->{_root};
         my $path_col = $root->{_path_column_name};
         my $path     = $rows->[0]->{$path_col};
         my $length   = length $path;
-        _add_descendant_nodes($root, $path_col, \@nodes, $rows, '', $length,
-                              $delay_load);
+        _add_descendant_nodes(
+                              {
+                               root        => $root,
+                               path_col    => $path_col,
+                               nodes       => \@nodes,
+                               rows        => $rows,
+                               prev_path   => $EMPTY_STRING,
+                               prev_length => $length,
+                               delay_load  => $delay_load
+                              }
+                             );
     }
     return \@nodes;
+}
+
+sub _add_descendant_nodes
+{
+    my ($args) = @_;
+
+    my $root        = $args->{root};
+    my $path_col    = $args->{path_col};
+    my $nodes       = $args->{nodes};
+    my $rows        = $args->{rows};
+    my $prev_path   = $args->{prev_path};
+    my $prev_length = $args->{prev_length};
+    my $delay_load  = $args->{delay_load};
+
+    my $node_children = undef;
+
+    while (@{$rows})
+    {
+        my $path   = $rows->[0]->{$path_col};
+        my $length = length $path;
+
+        # If path length is less, we've gone back up
+        # a level in the tree:
+        if ($length < $prev_length)
+        {
+            return;
+        }
+
+        # If path length is greater, we've gone down
+        # a level in the tree:
+        elsif ($length > $prev_length)
+        {
+            _add_descendant_nodes(
+                                  {
+                                   root        => $root,
+                                   path_col    => $path_col,
+                                   nodes       => $node_children,
+                                   rows        => $rows,
+                                   prev_path   => $prev_path,
+                                   prev_length => $length,
+                                   delay_load  => $delay_load
+                                  }
+                                 );
+        }
+
+        # If path length is the same, we're adding
+        # siblings at the same level:
+        else
+        {
+            my $row = shift @{$rows};
+
+            if ($row->{$path_col} eq $prev_path)
+            {
+                carp "Danger! Found multiple rows with path <$path>";
+            }
+            else
+            {
+                $prev_path = $row->{$path_col};
+            }
+
+            my $child = DBIx::Tree::MaterializedPath::Node->new($root);
+            $child->_load_from_hashref($row, $delay_load);
+            $node_children = [];
+            push @{$nodes}, {node => $child, children => $node_children};
+        }
+    }
+
+    return;
 }
 
 =head2 traverse_descendants
@@ -1070,17 +1131,19 @@ sub traverse_descendants
     croak 'Missing coderef'     unless $coderef;
     croak 'Invalid coderef'     unless ref($coderef) eq 'CODE';
 
-    foreach my $child (@$descendants)
+    foreach my $child (@{$descendants})
     {
         my $node = $child->{node};
         $coderef->($node, $self, $context);
 
         my $children = $child->{children};
-        if (@$children)
+        if (@{$children})
         {
             $node->traverse_descendants($children, $coderef, $context);
         }
     }
+
+    return;
 }
 
 =head2 delete_descendants
@@ -1098,7 +1161,9 @@ sub delete_descendants
     my ($sql, $bind_params) = $self->_cached_node_sql_info($sql_key);
 
     my $sth = $self->{_root}->_cached_sth($sql);
-    $sth->execute(@$bind_params);
+    $sth->execute(@{$bind_params});
+
+    return;
 }
 
 =head2 delete
@@ -1115,7 +1180,7 @@ Note: The root node of the tree cannot be deleted.
 
 =cut
 
-sub delete
+sub delete    ## no critic (Subroutines::ProhibitBuiltinHomonyms)
 {
     my ($self) = @_;
 
@@ -1142,7 +1207,7 @@ sub delete
             $node->_reparent($parent);
         };
 
-        foreach my $sibling (@$siblings)
+        foreach my $sibling (@{$siblings})
         {
             my $descendants = $sibling->get_descendants();
 
@@ -1154,8 +1219,10 @@ sub delete
         }
     };
 
-    eval { $root->_do_transaction($func); };
-    croak "delete() aborted: $@" if $@;
+    eval { $root->_do_transaction($func); 1; }
+      or do { croak "delete() aborted: $@"; };
+
+    return;
 }
 
 sub _delete
@@ -1167,9 +1234,11 @@ sub _delete
     my ($sql, $bind_params) = $self->_cached_node_sql_info($sql_key);
 
     my $sth = $self->{_root}->_cached_sth($sql);
-    $sth->execute(@$bind_params);
+    $sth->execute(@{$bind_params});
 
     $self->{_deleted} = 1;
+
+    return;
 }
 
 =head2 find
@@ -1288,8 +1357,9 @@ named "movie_id" which corresponds to the "id" column in the
 
 sub find
 {
-    my $self = shift;
-    my $options = ref $_[0] eq 'HASH' ? shift : {@_};
+    my ($self, @args) = @_;
+
+    my $options = ref $args[0] eq 'HASH' ? $args[0] : {@args};
 
     croak 'Missing WHERE data' unless $options->{where};
 
@@ -1301,14 +1371,14 @@ sub find
 
     # Need column names prefixed by table in case user's WHERE does
     # a query across tables:
-    my $id_col   = $table . '.' . $root->{_id_column_name};
-    my $path_col = $table . '.' . $root->{_path_column_name};
+    my $id_col   = $table . q{.} . $root->{_id_column_name};
+    my $path_col = $table . q{.} . $root->{_path_column_name};
 
     my $mapper   = $root->{_pathmapper};
     my $sqlmaker = $root->{_sqlmaker};
 
     my $tables = $options->{extra_tables} || [];
-    push @$tables, $table;
+    push @{$tables}, $table;
 
     # This returns the equivalent of WHERE_PATH_FINDS_DESCENDANTS:
     my $descendants_where = $mapper->descendants_where_struct($path_col, $path);
@@ -1316,7 +1386,7 @@ sub find
     # Now mix in user's requested WHERE struct:
     my $where = [-and => [$descendants_where, [$options->{where}]]];
 
-    my $columns = $delay_load ? [$id_col, $path_col] : '*';
+    my $columns = $delay_load ? [$id_col, $path_col] : q{*};
 
     my $order_by = $options->{order_by} || [$path_col];
 
@@ -1392,8 +1462,10 @@ sub swap_node
         $node2->_path($path1);
     };
 
-    eval { $self->{_root}->_do_transaction($func, $self, $node); };
-    croak "swap_node() aborted: $@" if $@;
+    eval { $self->{_root}->_do_transaction($func, $self, $node); 1; }
+      or do { croak "swap_node() aborted: $@"; };
+
+    return;
 }
 
 =head2 swap_subtree
@@ -1445,7 +1517,8 @@ sub swap_subtree
     croak 'Missing node to swap with' unless $node;
 
     croak 'Invalid node: is not a "DBIx::Tree::MaterializedPath::Node"'
-      unless blessed($node) && $node->isa('DBIx::Tree::MaterializedPath::Node');
+      unless blessed($node)
+          && $node->isa('DBIx::Tree::MaterializedPath::Node');
 
     croak 'Can\'t swap root node' if $self->is_root || $node->is_root;
 
@@ -1476,8 +1549,10 @@ sub swap_subtree
         $node2->traverse_descendants($descendants2, $coderef);
     };
 
-    eval { $self->{_root}->_do_transaction($func, $self, $node); };
-    croak "swap_subtree() aborted: $@" if $@;
+    eval { $self->{_root}->_do_transaction($func, $self, $node); 1; }
+      or do { croak "swap_subtree() aborted: $@"; };
+
+    return;
 }
 
 =head2 clone
@@ -1513,11 +1588,11 @@ sub _last_child_path
 
     my $sth = $self->{_root}->_cached_sth($sql);
 
-    $sth->execute(@$bind_params);
+    $sth->execute(@{$bind_params});
 
     my $row = $sth->fetch();
     $sth->finish;    # in case more than one row was returned
-    return (defined $row) ? $row->[0] : '';
+    return (defined $row) ? $row->[0] : $EMPTY_STRING;
 }
 
 #
@@ -1853,10 +1928,6 @@ L<DBIx::Tree::MaterializedPath|DBIx::Tree::MaterializedPath>
 
 L<SQL::Abstract|SQL::Abstract>
 
-=head1 AUTHOR
-
-Larry Leszczynski, C<< <larryl at cpan.org> >>
-
 =head1 BUGS
 
 Please report any bugs or feature requests to
@@ -1893,6 +1964,10 @@ L<http://cpanratings.perl.org/d/DBIx-Tree-MaterializedPath>
 L<http://search.cpan.org/dist/DBIx-Tree-MaterializedPath>
 
 =back
+
+=head1 AUTHOR
+
+Larry Leszczynski, C<< <larryl at cpan.org> >>
 
 =head1 COPYRIGHT & LICENSE
 
