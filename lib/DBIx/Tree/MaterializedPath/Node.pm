@@ -19,11 +19,11 @@ DBIx::Tree::MaterializedPath::Node - node objects for "materialized path" trees
 
 =head1 VERSION
 
-Version 0.02
+Version 0.03
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.02');
+use version 0.74; our $VERSION = qv('0.03');
 
 =head1 SYNOPSIS
 
@@ -640,12 +640,14 @@ sub _validate_new_children_data
     # which queries for each of them:
 
     my @columns = sort keys %columns;
+    if (@columns)
+    {
+        my $sql_key = 'VALIDATE_' . join($EMPTY_STRING, @columns);
+        my $sql = $self->{_root}->_cached_sql($sql_key, \@columns);
 
-    my $sql_key = 'VALIDATE_' . join($EMPTY_STRING, @columns);
-    my $sql = $self->{_root}->_cached_sql($sql_key, \@columns);
-
-    eval { my $sth = $root->_cached_sth($sql); 1; }
-      or do { croak 'Node data probably contains invalid column name(s)'; };
+        eval { my $sth = $root->_cached_sth($sql); 1; }
+          or do { croak 'Node data probably contains invalid column name(s)'; };
+    }
 
     return;
 }

@@ -3,9 +3,7 @@ Changes
 lib/DBIx/Tree/MaterializedPath.pm
 lib/DBIx/Tree/MaterializedPath/Node.pm
 lib/DBIx/Tree/MaterializedPath/PathMapper.pm
-Makefile.PL
 MANIFEST			This list of files
-META.yml
 README
 t/00-author/boilerplate.t
 t/00-author/distribution.t
@@ -35,3 +33,5 @@ t/18-find.t
 t/30-swap.t
 t/README
 t/testlib/testutils.pm
+Makefile.PL
+META.yml

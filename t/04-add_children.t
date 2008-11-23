@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 37;
+use Test::More tests => 47;
 
 use DBIx::Tree::MaterializedPath;
 
@@ -21,7 +21,7 @@ SKIP:
 {
     my $dbh;
     eval { $dbh = test_get_dbh() };
-    skip($@, 37) if $@ && chomp $@;
+    skip($@, 47) if $@ && chomp $@;
 
     test_initialize_empty_table($dbh);
 
@@ -137,5 +137,31 @@ SKIP:
     is(($dbh->{AutoCommit} ? 1 : 0), 0, $msg . ' (AutoCommit = 0)');
     $dbh->commit;
     is(($dbh->{AutoCommit} ? 1 : 0), 1, $msg . ' (AutoCommit = 1)');
+
+    #####
+
+    test_initialize_empty_table($dbh);
+
+    $tree = DBIx::Tree::MaterializedPath->new({dbh => $dbh});
+
+    $children = $tree->add_children({}, {}, {});
+
+    $msg = 'empty children - correct number of nodes returned';
+    is(scalar(@$children), 3, $msg);
+
+    isa_ok($children->[0], 'DBIx::Tree::MaterializedPath::Node', 'child 1.1');
+    isa_ok($children->[1], 'DBIx::Tree::MaterializedPath::Node', 'child 1.2');
+    isa_ok($children->[2], 'DBIx::Tree::MaterializedPath::Node', 'child 1.3');
+
+    is($children->[0]->{_path}, $tree->_map_path('1.1'),
+        'child 1.1 path is ok');
+    is($children->[1]->{_path}, $tree->_map_path('1.2'),
+        'child 1.2 path is ok');
+    is($children->[2]->{_path}, $tree->_map_path('1.3'),
+        'child 1.3 path is ok');
+
+    is_deeply($children->[0]->data, {}, 'child 1.1 data is ok');
+    is_deeply($children->[1]->data, {}, 'child 1.2 data is ok');
+    is_deeply($children->[2]->data, {}, 'child 1.3 data is ok');
 }
 

@@ -1,6 +1,6 @@
 ---
 name: DBIx-Tree-MaterializedPath
-version: v0.02
+version: v0.03
 author:
   - 'Larry Leszczynski <larryl@cpan.org>'
 abstract: fast DBI queries and updates on "materialized path" trees
@@ -25,13 +25,13 @@ recommends:
 provides:
   DBIx::Tree::MaterializedPath:
     file: lib/DBIx/Tree/MaterializedPath.pm
-    version: v0.02
+    version: v0.03
   DBIx::Tree::MaterializedPath::Node:
     file: lib/DBIx/Tree/MaterializedPath/Node.pm
-    version: v0.02
+    version: v0.03
   DBIx::Tree::MaterializedPath::PathMapper:
     file: lib/DBIx/Tree/MaterializedPath/PathMapper.pm
-    version: v0.02
+    version: v0.03
 generated_by: Module::Build version 0.3
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html

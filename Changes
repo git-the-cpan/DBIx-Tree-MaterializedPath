@@ -1,5 +1,8 @@
 Revision history for DBIx-Tree-MaterializedPath
 
+0.03    2008-11-22
+        Fixed add_children() to allow empy hashref for child data.
+
 0.02    2008-11-21
         Added perlcritic test, and tweaked code to pass.
 
