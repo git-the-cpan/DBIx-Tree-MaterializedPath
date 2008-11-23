@@ -19,11 +19,11 @@ DBIx::Tree::MaterializedPath::Node - node objects for "materialized path" trees
 
 =head1 VERSION
 
-Version 0.03
+Version 0.04
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.03');
+use version 0.74; our $VERSION = qv('0.04');
 
 =head1 SYNOPSIS
 
@@ -1927,6 +1927,8 @@ __END__
 =head1 SEE ALSO
 
 L<DBIx::Tree::MaterializedPath|DBIx::Tree::MaterializedPath>
+
+L<DBIx::Tree::MaterializedPath::PathMapper|DBIx::Tree::MaterializedPath::PathMapper>
 
 L<SQL::Abstract|SQL::Abstract>
 

@@ -1,5 +1,12 @@
 Revision history for DBIx-Tree-MaterializedPath
 
+0.04    2008-11-22
+        Changed an unpack() format template in
+            DBIx::Tree::MaterializedPath::PathMapper that was not
+            working in Perl 5.6.1 because of parenthesis grouping.
+        Added DBI to Build.PL 'requires'.
+        Minor POD tweaks.
+
 0.03    2008-11-22
         Fixed add_children() to allow empy hashref for child data.
 

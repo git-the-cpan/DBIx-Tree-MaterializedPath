@@ -1,6 +1,6 @@
 ---
 name: DBIx-Tree-MaterializedPath
-version: v0.03
+version: v0.04
 author:
   - 'Larry Leszczynski <larryl@cpan.org>'
 abstract: fast DBI queries and updates on "materialized path" trees
@@ -9,6 +9,7 @@ resources:
   license: http://dev.perl.org/licenses/
 requires:
   Clone: 0
+  DBI: 0
   Readonly: 0
   SQL::Abstract: 0
   Scalar::Util: 0
@@ -18,20 +19,19 @@ build_requires:
   Test::More: 0
 recommends:
   DBD::SQLite: 0
-  DBI: 0
   Pod::Coverage: 0
   Test::Pod: 0
   Test::Pod::Coverage: 0
 provides:
   DBIx::Tree::MaterializedPath:
     file: lib/DBIx/Tree/MaterializedPath.pm
-    version: v0.03
+    version: v0.04
   DBIx::Tree::MaterializedPath::Node:
     file: lib/DBIx/Tree/MaterializedPath/Node.pm
-    version: v0.03
+    version: v0.04
   DBIx::Tree::MaterializedPath::PathMapper:
     file: lib/DBIx/Tree/MaterializedPath/PathMapper.pm
-    version: v0.03
+    version: v0.04
 generated_by: Module::Build version 0.3
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html

@@ -9,6 +9,7 @@ my $builder = Module::Build->new(
     dist_version_from    => 'lib/DBIx/Tree/MaterializedPath.pm',
     requires             => {
                                 'Clone' => 0,
+                                'DBI' => 0,
                                 'Readonly' => 0,
                                 'Scalar::Util' => 0,
                                 'SQL::Abstract' => 0,
@@ -19,7 +20,6 @@ my $builder = Module::Build->new(
                                 'File::Spec' => 0,
                             },
     recommends           => {
-                                'DBI' => 0,
                                 'DBD::SQLite' => 0,
                                 'Pod::Coverage' => 0,
                                 'Test::Pod' => 0,

@@ -21,11 +21,11 @@ DBIx::Tree::MaterializedPath::PathMapper - manipulates paths for "materialized p
 
 =head1 VERSION
 
-Version 0.03
+Version 0.04
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.03');
+use version 0.74; our $VERSION = qv('0.04');
 
 =head1 SYNOPSIS
 
@@ -250,7 +250,16 @@ sub unmap
 {
     my ($self,      $path)     = @_;
     my ($chunksize, $pathpart) = $self->_parse_path($path);
-    my $format = "(A$chunksize)*";
+
+    # This doesn't work in perl 5.6.1, the parentheses
+    # for grouping and repeating are not allowed:
+    #
+    #my $format = "(A$chunksize)*";
+
+    # Build an explicit format that works in Perl 5.6.1:
+    my $num_chunks = int(length($pathpart) / $chunksize);
+    my $format = "A$chunksize" x $num_chunks;
+
     my $hrpath = join q{.}, map { hex $_ } unpack($format, $pathpart);
     return $hrpath;
 }
@@ -612,6 +621,8 @@ __END__
 =head1 SEE ALSO
 
 L<DBIx::Tree::MaterializedPath|DBIx::Tree::MaterializedPath>
+
+L<DBIx::Tree::MaterializedPath::Node|DBIx::Tree::MaterializedPath::Node>
 
 =head1 BUGS
 

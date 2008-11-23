@@ -12,11 +12,11 @@ DBIx::Tree::MaterializedPath - fast DBI queries and updates on "materialized pat
 
 =head1 VERSION
 
-Version 0.03
+Version 0.04
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.03');
+use version 0.74; our $VERSION = qv('0.04');
 
 =head1 SYNOPSIS
 
@@ -443,6 +443,10 @@ sub _cached_sql_VALIDATE
 __END__
 
 =head1 SEE ALSO
+
+L<DBIx::Tree::MaterializedPath::Node|DBIx::Tree::MaterializedPath::Node>.
+
+L<DBIx::Tree::MaterializedPath::PathMapper|DBIx::Tree::MaterializedPath::PathMapper>.
 
 Dan Collis-Puro's L<DBIx::Tree::NestedSet|DBIx::Tree::NestedSet>
 

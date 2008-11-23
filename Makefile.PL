@@ -6,6 +6,7 @@ WriteMakefile
           'VERSION_FROM' => 'lib/DBIx/Tree/MaterializedPath.pm',
           'PREREQ_PM' => {
                            'Clone' => '0',
+                           'DBI' => '0',
                            'File::Spec' => '0',
                            'Readonly' => '0',
                            'SQL::Abstract' => '0',
