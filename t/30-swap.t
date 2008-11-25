@@ -84,7 +84,7 @@ SKIP:
     $count       = 0;
     $text        = '';
     $path        = '';
-    $tree->traverse_descendants($descendants, $coderef);
+    $descendants->traverse($coderef);
 
     $msg = 'swap_node() maintains other tree data';
     is($text, 'cbadfe', $msg);
@@ -143,7 +143,7 @@ SKIP:
     $count       = 0;
     $text        = '';
     $path        = '';
-    $tree->traverse_descendants($descendants, $coderef);
+    $descendants->traverse($coderef);
 
     $msg = 'swap_subtrees() updates subtree data';
     is($text, 'cdfeba', $msg);

@@ -21,11 +21,11 @@ DBIx::Tree::MaterializedPath::PathMapper - manipulates paths for "materialized p
 
 =head1 VERSION
 
-Version 0.04
+Version 0.05
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.04');
+use version 0.74; our $VERSION = qv('0.05');
 
 =head1 SYNOPSIS
 
@@ -258,7 +258,7 @@ sub unmap
 
     # Build an explicit format that works in Perl 5.6.1:
     my $num_chunks = int(length($pathpart) / $chunksize);
-    my $format = "A$chunksize" x $num_chunks;
+    my $format     = "A$chunksize" x $num_chunks;
 
     my $hrpath = join q{.}, map { hex $_ } unpack($format, $pathpart);
     return $hrpath;

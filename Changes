@@ -1,10 +1,19 @@
 Revision history for DBIx-Tree-MaterializedPath
 
+0.05    2008-11-24
+        API change: Changed D::T::MP::Node->get_descendants() to
+            return a D::T::MP::TreeRepresentation object instead
+            of a raw data structure.  Removed
+            Node->traverse_descendants() in favor of
+            TreeRepresentation->traverse().
+        Minor POD tweaks.
+
 0.04    2008-11-22
-        Changed an unpack() format template in
-            DBIx::Tree::MaterializedPath::PathMapper that was not
-            working in Perl 5.6.1 because of parenthesis grouping.
-        Added DBI to Build.PL 'requires'.
+        Changed an unpack() format template in D::T::MP::PathMapper
+            that was not working in Perl 5.6.1 because of
+            parenthesis grouping.
+        Added DBI to Build.PL 'requires' to avoid erroneous fail
+            reports from CPANtesters.
         Minor POD tweaks.
 
 0.03    2008-11-22

@@ -12,6 +12,7 @@ use Readonly;
 Readonly::Scalar my $EMPTY_STRING => q{};
 
 use DBIx::Tree::MaterializedPath::PathMapper;
+use DBIx::Tree::MaterializedPath::TreeRepresentation;
 
 =head1 NAME
 
@@ -19,11 +20,11 @@ DBIx::Tree::MaterializedPath::Node - node objects for "materialized path" trees
 
 =head1 VERSION
 
-Version 0.04
+Version 0.05
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.04');
+use version 0.74; our $VERSION = qv('0.05');
 
 =head1 SYNOPSIS
 
@@ -381,9 +382,9 @@ table.
 Will croak if data is not a HASHREF or is an empty hash.
 
 Will croak if the data hash contains keys which match either the
-L<id_column_name|DBIx::Tree::MaterializedPath/item_id_column_name>
+L<id_column_name|DBIx::Tree::MaterializedPath/id_column_name>
 or the
-L<path_column_name|DBIx::Tree::MaterializedPath/item_path_column_name>
+L<path_column_name|DBIx::Tree::MaterializedPath/path_column_name>
 as specified in the
 L<DBIx::Tree::MaterializedPath|DBIx::Tree::MaterializedPath>
 constructor.
@@ -466,7 +467,7 @@ New nodes will be created to the right of any existing children
 I<@children> should be a list (or listref) of hashrefs, where
 each hashref contains the metadata for a child to be added.
 
-Note: Children with no metadata can be added by passing empty
+B<Note:> Children with no metadata can be added by passing empty
 hashrefs, e.g.:
 
     $node->add_children({}, {}, {})
@@ -533,7 +534,7 @@ descendants) will need to be updated.>
 I<@children> should be a list (or listref) of hashrefs, where
 each hashref contains the metadata for a child to be added.
 
-Note: Children with no metadata can be added by passing empty
+B<Note:> Children with no metadata can be added by passing empty
 hashrefs, e.g.:
 
     $node->add_children_at_left({}, {}, {})
@@ -572,7 +573,7 @@ sub add_children_at_left
         # Need to reparent any existing children first (i.e.
         # shift them to the right), so that the paths of the
         # newly-created children don't collide:
-        if (@{$descendants})
+        if ($descendants->has_nodes)
         {
             $next_path =
               $mapper->next_child_path($next_path, $num_new_children);
@@ -592,7 +593,7 @@ sub add_children_at_left
                 }
             };
 
-            $self->traverse_descendants($descendants, $coderef);
+            $descendants->traverse($coderef);
         }
 
         ($nodes, $next_path) =
@@ -906,47 +907,11 @@ sub _nodes_from_hashrefs
 
     $node->get_descendants( $options_hashref )
 
-Returns a reference to a (possibly empty) list of hashrefs
-which in turn contain all of a node's descendant nodes.
-
-E.g. calling C<get_descendants()> on node "E" below:
-
-              A
-           ___|_____
-          |         |
-          B         E
-         _|_     ___|___
-        |   |   |   |   |
-        C   D   F   I   J
-               _|_
-              |   |
-              G   H
-
-results in:
-
-    [
-      {
-        node     => DBIx::Tree::MaterializedPath::Node "F",
-        children => [
-                      {
-                        node     => DBIx::Tree::MaterializedPath::Node "G",
-                        children => [],
-                      },
-                      {
-                        node     => DBIx::Tree::MaterializedPath::Node "H",
-                        children => [],
-                      },
-                    ],
-      },
-      {
-        node     => DBIx::Tree::MaterializedPath::Node "I",
-        children => [],
-      },
-      {
-        node     => DBIx::Tree::MaterializedPath::Node "J",
-        children => [],
-      },
-    ]
+Returns a
+L<DBIx::Tree::MaterializedPath::TreeRepresentation|DBIx::Tree::MaterializedPath::TreeRepresentation>
+object, which in turn can be used to
+L<traverse()|DBIx::Tree::MaterializedPath::TreeRepresentation/traverse>
+this node's descendants.
 
 By default, any node metadata stored in the database is retrieved
 by the database SELECT and is populated in each of the
@@ -956,6 +921,11 @@ If the optional parameters hashref contains a true value for
 "B<delay_load>", then the metadata will not be retrieved from the
 database until the L<data()|/data> method is called on a given
 node.
+
+See
+L<|DBIx::Tree::MaterializedPath::TreeRepresentation|DBIx::Tree::MaterializedPath::TreeRepresentation>
+for information on
+L<traverse()|DBIx::Tree::MaterializedPath::TreeRepresentation/traverse>.
 
 =cut
 
@@ -979,173 +949,11 @@ sub get_descendants
 
     my $rows = $sth->fetchall_arrayref({});    # fetch array of hashrefs
 
-    # Rows are sorted by path, e.g:
-    #    { id => 2, name => "a", path => "1.1"     },
-    #    { id => 3, name => "b", path => "1.2"     },
-    #    { id => 4, name => "c", path => "1.3"     },
-    #    { id => 5, name => "d", path => "1.3.1"   },
-    #    { id => 7, name => "f", path => "1.3.1.1" },
-    #    { id => 6, name => "e", path => "1.3.2"   },
+    my $tree_representation =
+      DBIx::Tree::MaterializedPath::TreeRepresentation->new($self, $rows,
+                                            {ignore_empty_hash => $delay_load});
 
-    my @nodes = ();
-    if (@{$rows})
-    {
-        my $root     = $self->{_root};
-        my $path_col = $root->{_path_column_name};
-        my $path     = $rows->[0]->{$path_col};
-        my $length   = length $path;
-        _add_descendant_nodes(
-                              {
-                               root        => $root,
-                               path_col    => $path_col,
-                               nodes       => \@nodes,
-                               rows        => $rows,
-                               prev_path   => $EMPTY_STRING,
-                               prev_length => $length,
-                               delay_load  => $delay_load
-                              }
-                             );
-    }
-    return \@nodes;
-}
-
-sub _add_descendant_nodes
-{
-    my ($args) = @_;
-
-    my $root        = $args->{root};
-    my $path_col    = $args->{path_col};
-    my $nodes       = $args->{nodes};
-    my $rows        = $args->{rows};
-    my $prev_path   = $args->{prev_path};
-    my $prev_length = $args->{prev_length};
-    my $delay_load  = $args->{delay_load};
-
-    my $node_children = undef;
-
-    while (@{$rows})
-    {
-        my $path   = $rows->[0]->{$path_col};
-        my $length = length $path;
-
-        # If path length is less, we've gone back up
-        # a level in the tree:
-        if ($length < $prev_length)
-        {
-            return;
-        }
-
-        # If path length is greater, we've gone down
-        # a level in the tree:
-        elsif ($length > $prev_length)
-        {
-            _add_descendant_nodes(
-                                  {
-                                   root        => $root,
-                                   path_col    => $path_col,
-                                   nodes       => $node_children,
-                                   rows        => $rows,
-                                   prev_path   => $prev_path,
-                                   prev_length => $length,
-                                   delay_load  => $delay_load
-                                  }
-                                 );
-        }
-
-        # If path length is the same, we're adding
-        # siblings at the same level:
-        else
-        {
-            my $row = shift @{$rows};
-
-            if ($row->{$path_col} eq $prev_path)
-            {
-                carp "Danger! Found multiple rows with path <$path>";
-            }
-            else
-            {
-                $prev_path = $row->{$path_col};
-            }
-
-            my $child = DBIx::Tree::MaterializedPath::Node->new($root);
-            $child->_load_from_hashref($row, $delay_load);
-            $node_children = [];
-            push @{$nodes}, {node => $child, children => $node_children};
-        }
-    }
-
-    return;
-}
-
-=head2 traverse_descendants
-
-    $node->traverse_descendants( $descendants, $coderef, $optional_context )
-
-Given a data structure of descendants (as returned by
-L<get_descendants()|/get_descendants>) and a coderef, traverse down
-the data structure in leftmost depth-first order and apply the
-coderef at each node.
-
-The first argument to the I<$coderef> will be the node being
-traversed.  The second argument to the I<$coderef> will be that
-node's parent.
-
-If supplied, I<$context> will be the third argument to the
-coderef.  I<$context> can be a reference to a data structure that
-can allow information to be carried along from node to node while
-traversing the tree.
-
-E.g. to count the number of descendants:
-
-    my $context = {count => 0};
-    my $coderef = sub {
-        my ($node, $parent, $context) = @_;
-        $context->{count}++;
-    };
-
-    my $descendants = $node->get_descendants();
-    $node->traverse_descendants($descendants, $coderef, $context);
-
-    print "The node has $context->{count} descendants.\n";
-
-Note that you may be able to use closure variables instead of
-passing them along in I<$context>:
-
-    my $count   = 0;
-    my $coderef = sub {
-        my ($node, $parent) = @_;
-        $count++;
-    };
-
-    my $descendants = $node->get_descendants();
-    $node->traverse_descendants($descendants, $coderef);
-
-    print "The node has $count descendants.\n";
-
-=cut
-
-sub traverse_descendants
-{
-    my ($self, $descendants, $coderef, $context) = @_;
-
-    croak 'Missing descendants' unless $descendants;
-    croak 'Invalid descendants' unless ref($descendants) eq 'ARRAY';
-    croak 'Missing coderef'     unless $coderef;
-    croak 'Invalid coderef'     unless ref($coderef) eq 'CODE';
-
-    foreach my $child (@{$descendants})
-    {
-        my $node = $child->{node};
-        $coderef->($node, $self, $context);
-
-        my $children = $child->{children};
-        if (@{$children})
-        {
-            $node->traverse_descendants($children, $coderef, $context);
-        }
-    }
-
-    return;
+    return $tree_representation;
 }
 
 =head2 delete_descendants
@@ -1178,7 +986,7 @@ updated.
 
 B<Don't try to use the node object after you have deleted it!>
 
-Note: The root node of the tree cannot be deleted.
+B<Note:> The root node of the tree cannot be deleted.
 
 =cut
 
@@ -1217,7 +1025,7 @@ sub delete    ## no critic (Subroutines::ProhibitBuiltinHomonyms)
 
             $next_path = $mapper->next_child_path($next_path);
 
-            $sibling->traverse_descendants($descendants, $coderef);
+            $descendants->traverse($coderef);
         }
     };
 
@@ -1438,7 +1246,7 @@ results in:
               |   |
               G   H
 
-Note: The root node of the tree cannot be swapped with another
+B<Note:> The root node of the tree cannot be swapped with another
 node.
 
 =cut
@@ -1504,10 +1312,10 @@ results in:
     |   |
     G   H
 
-Note: Because subtrees are being swapped, a node cannot be
+B<Note:> Because subtrees are being swapped, a node cannot be
 swapped with one of its own ancestors or descendants.
 
-Note: The root node of the tree cannot be swapped with another
+B<Note:> The root node of the tree cannot be swapped with another
 node.
 
 =cut
@@ -1547,8 +1355,8 @@ sub swap_subtree
             my ($node, $parent, $context) = @_;
             $node->_reparent($parent);
         };
-        $node1->traverse_descendants($descendants1, $coderef);
-        $node2->traverse_descendants($descendants2, $coderef);
+        $descendants1->traverse($coderef);
+        $descendants2->traverse($coderef);
     };
 
     eval { $self->{_root}->_do_transaction($func, $self, $node); 1; }
@@ -1559,7 +1367,9 @@ sub swap_subtree
 
 =head2 clone
 
-Create a clone of an existing tree object.
+    $new_node = $node->clone
+
+Create a clone of an existing node object.
 
 =cut
 
@@ -1929,6 +1739,8 @@ __END__
 L<DBIx::Tree::MaterializedPath|DBIx::Tree::MaterializedPath>
 
 L<DBIx::Tree::MaterializedPath::PathMapper|DBIx::Tree::MaterializedPath::PathMapper>
+
+L<DBIx::Tree::MaterializedPath::TreeRepresentation|DBIx::Tree::MaterializedPath::TreeRepresentation>
 
 L<SQL::Abstract|SQL::Abstract>
 

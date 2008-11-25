@@ -12,11 +12,11 @@ DBIx::Tree::MaterializedPath - fast DBI queries and updates on "materialized pat
 
 =head1 VERSION
 
-Version 0.04
+Version 0.05
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.04');
+use version 0.74; our $VERSION = qv('0.05');
 
 =head1 SYNOPSIS
 
@@ -29,6 +29,7 @@ use version 0.74; our $VERSION = qv('0.04');
 
     # Add children to a node (assumes there is a "name" column
     # in the "my_movies_tree" table):
+    #
     my @children = $root->add_children([
                                         {name => 'Drama'},
                                         {name => 'Sci-Fi'},
@@ -37,18 +38,27 @@ use version 0.74; our $VERSION = qv('0.04');
 
     # Add a new child in front of any existing children,
     # instead of at the end of the list:
+    #
     my $child = $root->add_children_at_left([{name => 'Comedy'}]);
 
     # Locate a node (uses SQL::Abstract to query node metadata):
+    #
     my $sci_fi_node = $root->find(where => {name => {-like => 'Sci%'}});
 
     $sci_fi_node->add_child({name => 'The Andromeda Strain'});
 
     # Get children of a node:
+    #
     @children = $sci_fi_node->get_children();
 
     # Access arbitrary node metadata:
+    #
     print $children[0]->data->{name};    # 'The Andromeda Strain'
+
+    # Walk tree (or node) descendants and operate on each node:
+    #
+    my $descendants = $tree->get_descendants;
+    $descendants->traverse($coderef);
 
 =head1 DESCRIPTION
 
@@ -444,9 +454,9 @@ __END__
 
 =head1 SEE ALSO
 
-L<DBIx::Tree::MaterializedPath::Node|DBIx::Tree::MaterializedPath::Node>.
+L<DBIx::Tree::MaterializedPath::Node|DBIx::Tree::MaterializedPath::Node>
 
-L<DBIx::Tree::MaterializedPath::PathMapper|DBIx::Tree::MaterializedPath::PathMapper>.
+L<DBIx::Tree::MaterializedPath::PathMapper|DBIx::Tree::MaterializedPath::PathMapper>
 
 Dan Collis-Puro's L<DBIx::Tree::NestedSet|DBIx::Tree::NestedSet>
 

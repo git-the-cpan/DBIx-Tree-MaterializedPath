@@ -89,7 +89,7 @@ SKIP:
     $descendants = $tree->get_descendants();
     $count       = 0;
     $text        = '';
-    $tree->traverse_descendants($descendants, $coderef);
+    $descendants->traverse($coderef);
 
     $msg = 'correct number of children added to root node';
     is($count, 9, $msg);
@@ -109,7 +109,7 @@ SKIP:
     $descendants = $tree->get_descendants();
     $count       = 0;
     $text        = '';
-    $tree->traverse_descendants($descendants, $coderef);
+    $descendants->traverse($coderef);
 
     $msg = 'correct number of children added to deeper node';
     is($count, 9, $msg);
@@ -129,7 +129,7 @@ SKIP:
     $descendants = $tree->get_descendants();
     $count       = 0;
     $text        = '';
-    $tree->traverse_descendants($descendants, $coderef);
+    $descendants->traverse($coderef);
 
     $msg = 'correct number of children added to leaf node';
     is($count, 9, $msg);
@@ -149,7 +149,7 @@ SKIP:
     $descendants = $tree->get_descendants();
     $count       = 0;
     $text        = '';
-    $tree->traverse_descendants($descendants, $coderef);
+    $descendants->traverse($coderef);
 
     $msg = 'correct number of children added to last node';
     is($count, 9, $msg);

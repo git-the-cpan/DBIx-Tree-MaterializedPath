@@ -55,7 +55,7 @@ SKIP:
     $count       = 0;
     $text        = '';
     $path        = '';
-    $tree->traverse_descendants($descendants, $coderef);
+    $descendants->traverse($coderef);
 
     $msg = "delete() for depth-1 leaf node ($node)";
     is($text, 'bcdfe', $msg);
@@ -72,7 +72,7 @@ SKIP:
     $count       = 0;
     $text        = '';
     $path        = '';
-    $tree->traverse_descendants($descendants, $coderef);
+    $descendants->traverse($coderef);
 
     $msg = "delete() for depth-2 leaf node ($node)";
     is($text, 'abcdf', $msg);
@@ -89,7 +89,7 @@ SKIP:
     $count       = 0;
     $text        = '';
     $path        = '';
-    $tree->traverse_descendants($descendants, $coderef);
+    $descendants->traverse($coderef);
 
     $msg = "delete() for depth-3 leaf node ($node)";
     is($text, 'abcde', $msg);
@@ -106,7 +106,7 @@ SKIP:
     $count       = 0;
     $text        = '';
     $path        = '';
-    $tree->traverse_descendants($descendants, $coderef);
+    $descendants->traverse($coderef);
 
     $msg = "delete() for depth-2 node ($node)";
     is($text, 'abce', $msg);
@@ -123,7 +123,7 @@ SKIP:
     $count       = 0;
     $text        = '';
     $path        = '';
-    $tree->traverse_descendants($descendants, $coderef);
+    $descendants->traverse($coderef);
 
     $msg = "delete() for depth-1 node ($node)";
     is($text, 'ab',       $msg);

@@ -25,16 +25,16 @@ SKIP:
 
     my ($tree, $childhash) = test_create_test_tree($dbh);
 
+    my $children;
     my $child;
     my $parent;
-
-    my $descendants = $tree->get_descendants();
 
     $msg = 'get_parent() returns undef for root';
     is($tree->get_parent(), undef, $msg);
 
-    $child  = $descendants->[2]->{node};
-    $parent = $child->get_parent();
+    $children = $tree->get_children();
+    $child    = $children->[2];
+    $parent   = $child->get_parent();
 
     $msg = 'Object returned by get_parent() for depth-1 child';
     isa_ok($parent, 'DBIx::Tree::MaterializedPath::Node', $msg);
@@ -42,8 +42,9 @@ SKIP:
     $msg = 'get_parent() returns root for depth-1 child';
     is($parent->data->{name}, $tree->data->{name}, $msg);
 
-    $child  = $descendants->[2]->{children}->[1]->{node};
-    $parent = $child->get_parent();
+    $children = $child->get_children();
+    $child    = $children->[1];
+    $parent   = $child->get_parent();
 
     $msg = 'Object returned by get_parent() for deeper child';
     isa_ok($parent, 'DBIx::Tree::MaterializedPath::Node', $msg);
