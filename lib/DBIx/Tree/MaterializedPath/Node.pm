@@ -5,7 +5,6 @@ use strict;
 
 use Carp;
 use SQL::Abstract;
-use Scalar::Util qw(blessed);
 
 use Readonly;
 
@@ -20,11 +19,11 @@ DBIx::Tree::MaterializedPath::Node - node objects for "materialized path" trees
 
 =head1 VERSION
 
-Version 0.05
+Version 0.06
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.05');
+use version 0.74; our $VERSION = qv('0.06');
 
 =head1 SYNOPSIS
 
@@ -59,8 +58,8 @@ sub new
     my ($class, $root, @args) = @_;
 
     croak 'Missing tree root' unless $root;
-    croak 'Invalid tree root: is not a "DBIx::Tree::MaterializedPath"'
-      unless blessed($root) && $root->isa('DBIx::Tree::MaterializedPath');
+    eval { ref($root) && $root->isa('DBIx::Tree::MaterializedPath') }
+      or do { croak 'Invalid tree root: not a "DBIx::Tree::MaterializedPath"' };
 
     my $options = ref $args[0] eq 'HASH' ? $args[0] : {@args};
 
@@ -70,6 +69,10 @@ sub new
     $self->{_is_root} = 0;
 
     $self->_init($options);
+
+    $self->_load_from_hashref($options->{data}, $options->{ignore_empty_hash})
+      if $options->{data};
+
     return $self;
 }
 
@@ -121,9 +124,9 @@ sub is_same_node_as
     my ($self, $node) = @_;
 
     croak 'Missing node to compare with' unless $node;
-
-    croak 'Invalid node: is not a "DBIx::Tree::MaterializedPath::Node"'
-      unless blessed($node) && $node->isa('DBIx::Tree::MaterializedPath::Node');
+    eval { ref($node) && $node->isa('DBIx::Tree::MaterializedPath::Node') }
+      or
+      do { croak 'Invalid node: not a "DBIx::Tree::MaterializedPath::Node"' };
 
     return $self->_path eq $node->_path;
 }
@@ -143,9 +146,9 @@ sub is_ancestor_of
     my ($self, $node) = @_;
 
     croak 'Missing node' unless $node;
-
-    croak 'Invalid node: is not a "DBIx::Tree::MaterializedPath::Node"'
-      unless blessed($node) && $node->isa('DBIx::Tree::MaterializedPath::Node');
+    eval { ref($node) && $node->isa('DBIx::Tree::MaterializedPath::Node') }
+      or
+      do { croak 'Invalid node: not a "DBIx::Tree::MaterializedPath::Node"' };
 
     my $mapper = $self->{_root}->{_pathmapper};
     return $mapper->is_ancestor_of($self->_path, $node->_path);
@@ -166,9 +169,9 @@ sub is_descendant_of
     my ($self, $node) = @_;
 
     croak 'Missing node' unless $node;
-
-    croak 'Invalid node: is not a "DBIx::Tree::MaterializedPath::Node"'
-      unless blessed($node) && $node->isa('DBIx::Tree::MaterializedPath::Node');
+    eval { ref($node) && $node->isa('DBIx::Tree::MaterializedPath::Node') }
+      or
+      do { croak 'Invalid node: not a "DBIx::Tree::MaterializedPath::Node"' };
 
     my $mapper = $self->{_root}->{_pathmapper};
     return $mapper->is_descendant_of($self->_path, $node->_path);
@@ -266,8 +269,10 @@ sub _load_from_hashref
 {
     my ($self, $data, $ignore_empty_hash) = @_;
 
-    my $id_col   = $self->{_root}->{_id_column_name};
-    my $path_col = $self->{_root}->{_path_column_name};
+    my $root     = $self->{_root};
+    my $id_col   = $root->{_id_column_name};
+    my $path_col = $root->{_path_column_name};
+
     $self->{_id}   = delete $data->{$id_col}   if exists $data->{$id_col};
     $self->{_path} = delete $data->{$path_col} if exists $data->{$path_col};
 
@@ -700,8 +705,8 @@ sub get_parent
     $sth->finish;    # in case more than one row was returned
     croak qq{No row [$sql]} unless defined $row;
 
-    my $parent = DBIx::Tree::MaterializedPath::Node->new($self->{_root});
-    $parent->_load_from_hashref($row);
+    my $parent =
+      DBIx::Tree::MaterializedPath::Node->new($self->{_root}, {data => $row});
 
     return $parent;
 }
@@ -756,10 +761,11 @@ sub get_children
 
     my $sth = $self->{_root}->_cached_sth($sql);
     $sth->execute(@{$bind_params});
+    my $column_names = $sth->{NAME};    # immediately after execute()
 
-    my $rows = $sth->fetchall_arrayref({});    # fetch array of hashrefs
+    my $rows = $sth->fetchall_arrayref; # fetch array of arrays
 
-    return $self->_nodes_from_hashrefs($rows, $delay_load);
+    return $self->_nodes_from_listrefs($rows, $column_names, $delay_load);
 }
 
 =head2 get_siblings
@@ -799,10 +805,11 @@ sub get_siblings
 
     my $sth = $self->{_root}->_cached_sth($sql);
     $sth->execute(@{$bind_params});
+    my $column_names = $sth->{NAME};    # immediately after execute()
 
-    my $rows = $sth->fetchall_arrayref({});    # fetch array of hashrefs
+    my $rows = $sth->fetchall_arrayref; # fetch array of arrays
 
-    return $self->_nodes_from_hashrefs($rows, $delay_load);
+    return $self->_nodes_from_listrefs($rows, $column_names, $delay_load);
 }
 
 =head2 get_siblings_to_the_right
@@ -876,27 +883,31 @@ sub _get_siblings_to_one_side
 
     my $sth = $self->{_root}->_cached_sth($sql);
     $sth->execute(@{$bind_params});
+    my $column_names = $sth->{NAME};    # immediately after execute()
 
-    my $rows = $sth->fetchall_arrayref({});    # fetch array of hashrefs
+    my $rows = $sth->fetchall_arrayref; # fetch array of arrays
 
-    return $self->_nodes_from_hashrefs($rows, $delay_load);
+    return $self->_nodes_from_listrefs($rows, $column_names, $delay_load);
 }
 
 #
-# Given an array of hashrefs, create an array of nodes:
+# Given an array of listrefs, create an array of nodes:
 #
-sub _nodes_from_hashrefs
+sub _nodes_from_listrefs
 {
-    my ($self, $hashrefs, $delay_load) = @_;
+    my ($self, $listrefs, $column_names, $delay_load) = @_;
 
     my $root = $self->{_root};
 
+    my @column_names = @{$column_names};
+
     my @nodes = ();
 
-    foreach my $hashref (@{$hashrefs})
+    foreach my $listref (@{$listrefs})
     {
-        my $node = DBIx::Tree::MaterializedPath::Node->new($root);
-        $node->_load_from_hashref($hashref, $delay_load);
+        my %data = map { $_ => shift @{$listref} } @column_names;
+        my $node = DBIx::Tree::MaterializedPath::Node->new($root,
+                            {data => \%data, ignore_empty_hash => $delay_load});
         push @nodes, $node;
     }
 
@@ -946,12 +957,13 @@ sub get_descendants
 
     my $sth = $self->{_root}->_cached_sth($sql);
     $sth->execute(@{$bind_params});
+    my $column_names = $sth->{NAME};    # immediately after execute()
 
-    my $rows = $sth->fetchall_arrayref({});    # fetch array of hashrefs
+    my $rows = $sth->fetchall_arrayref; # fetch array of arrays
 
     my $tree_representation =
-      DBIx::Tree::MaterializedPath::TreeRepresentation->new($self, $rows,
-                                            {ignore_empty_hash => $delay_load});
+      DBIx::Tree::MaterializedPath::TreeRepresentation->new($self,
+                      $column_names, $rows, {ignore_empty_hash => $delay_load});
 
     return $tree_representation;
 }
@@ -1206,18 +1218,20 @@ sub find
     my $sth = $self->{_root}->_cached_sth($sql);
 
     $sth->execute(@bind_params);
+    my $column_names = $sth->{NAME};    # immediately after execute()
 
-    my $rows = $sth->fetchall_arrayref({});    # fetch array of hashrefs
+    my $rows = $sth->fetchall_arrayref; # fetch array of arrays
 
-    return $self->_nodes_from_hashrefs($rows, $delay_load);
+    return $self->_nodes_from_listrefs($rows, $column_names, $delay_load);
 }
 
 =head2 swap_node
 
     $node->swap_node( $other_node )
 
-Swap locations (i.e. paths) between this node and the
-specified node.
+Swap locations (i.e. paths) between this node and the specified
+node.  The nodes being swapped can be at different depths in the
+tree.
 
 B<Any children of the nodes being swapped will remain in
 place.>  E.g. swapping "B" and "E" in the tree below:
@@ -1256,9 +1270,9 @@ sub swap_node
     my ($self, $node) = @_;
 
     croak 'Missing node to swap with' unless $node;
-
-    croak 'Invalid node: is not a "DBIx::Tree::MaterializedPath::Node"'
-      unless blessed($node) && $node->isa('DBIx::Tree::MaterializedPath::Node');
+    eval { ref($node) && $node->isa('DBIx::Tree::MaterializedPath::Node') }
+      or
+      do { croak 'Invalid node: not a "DBIx::Tree::MaterializedPath::Node"' };
 
     croak 'Can\'t swap root node' if $self->{_is_root} || $node->{_is_root};
 
@@ -1282,8 +1296,9 @@ sub swap_node
 
     $node->swap_subtree( $other_node )
 
-Swap this node (and all of its children) with the
-specified node (and all of its children).
+Swap this node (and all of its children) with the specified node
+(and all of its children).  The nodes being swapped can be at
+different depths in the tree.
 
 Any children of the nodes being swapped will move with them.
 E.g. swapping "B" and "E" in the tree below:
@@ -1325,10 +1340,9 @@ sub swap_subtree
     my ($self, $node) = @_;
 
     croak 'Missing node to swap with' unless $node;
-
-    croak 'Invalid node: is not a "DBIx::Tree::MaterializedPath::Node"'
-      unless blessed($node)
-          && $node->isa('DBIx::Tree::MaterializedPath::Node');
+    eval { ref($node) && $node->isa('DBIx::Tree::MaterializedPath::Node') }
+      or
+      do { croak 'Invalid node: not a "DBIx::Tree::MaterializedPath::Node"' };
 
     croak 'Can\'t swap root node' if $self->is_root || $node->is_root;
 
@@ -1426,16 +1440,6 @@ sub _next_child_path
         return $mapper->first_child_path($self->_path);
     }
 }
-
-=head2 TODO
-
-TODO
-
- ancestors()  (is this necessary?)
-
- move nodes (reparent?)
-
-=cut
 
 ###################################################################
 

@@ -45,6 +45,7 @@ sub test_drop_table
     $table ||= 'my_tree';
 
     local $dbh->{PrintError} = 0;
+    local $dbh->{PrintWarn}  = 0;
     local $dbh->{RaiseError} = 1;
 
     eval { $dbh->do("drop table $table") };
@@ -57,6 +58,7 @@ sub test_initialize_empty_table
     $table ||= 'my_tree';
 
     local $dbh->{PrintError} = 0;
+    local $dbh->{PrintWarn}  = 0;
     local $dbh->{RaiseError} = 1;
 
     test_drop_table($dbh, $table);
@@ -81,6 +83,7 @@ sub test_initialize_join_table
     $table ||= 'my_join_data';
 
     local $dbh->{PrintError} = 0;
+    local $dbh->{PrintWarn}  = 0;
     local $dbh->{RaiseError} = 1;
 
     test_drop_table($dbh, $table);
@@ -112,6 +115,7 @@ sub test_create_root_node
     $table ||= 'my_tree';
 
     local $dbh->{PrintError} = 0;
+    local $dbh->{PrintWarn}  = 0;
     local $dbh->{RaiseError} = 1;
 
     my $sth = $dbh->prepare("insert into $table (path, name) values (?, ?)");
@@ -155,6 +159,7 @@ sub test_update_node_name
     $table ||= 'my_tree';
 
     local $dbh->{PrintError} = 0;
+    local $dbh->{PrintWarn}  = 0;
     local $dbh->{RaiseError} = 1;
 
     my $sth = $dbh->prepare("update $table set name = ? where path = ?");

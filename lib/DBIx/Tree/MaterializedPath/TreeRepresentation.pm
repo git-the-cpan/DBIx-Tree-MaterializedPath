@@ -4,11 +4,8 @@ use warnings;
 use strict;
 
 use Carp;
-use Scalar::Util qw(blessed);
 
 use Readonly;
-
-Readonly::Scalar my $EMPTY_STRING => q{};
 
 use DBIx::Tree::MaterializedPath::Node;
 
@@ -18,26 +15,28 @@ DBIx::Tree::MaterializedPath::TreeRepresentation - data structure for "materiali
 
 =head1 VERSION
 
-Version 0.05
+Version 0.06
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.05');
+use version 0.74; our $VERSION = qv('0.06');
 
 =head1 SYNOPSIS
 
     # Row data must be sorted by path:
+    my $column_names = ['id', 'path', 'name'];
     my $subtree_data = [
-                        {id => 2, path => "1.1",     name => "a"},
-                        {id => 3, path => "1.2",     name => "b"},
-                        {id => 4, path => "1.3",     name => "c"},
-                        {id => 5, path => "1.3.1",   name => "d"},
-                        {id => 7, path => "1.3.1.1", name => "e"},
-                        {id => 6, path => "1.3.2",   name => "f"},
+                        [ 2, "1.1",     "a"],
+                        [ 3, "1.2",     "b"],
+                        [ 4, "1.3",     "c"],
+                        [ 5, "1.3.1",   "d"],
+                        [ 7, "1.3.1.1", "e"],
+                        [ 6, "1.3.2",   "f"],
                        ];
 
     my $subtree_representation =
       DBIx::Tree::MaterializedPath::TreeRepresentation->new($node,
+                                                            $column_names,
                                                             $subtree_data);
 
     $subtree_representation->traverse($coderef, $context);
@@ -47,8 +46,18 @@ use version 0.74; our $VERSION = qv('0.05');
 This module implements a data structure that represents a tree
 (or subtree) as stored in the database.
 
-See
-L<get_descendants()|DBIx::Tree::MaterializedPath::Node/get_descendants>.
+B<Note:> Normally these objects would not be created independently
+- call
+L<get_descendants()|DBIx::Tree::MaterializedPath::Node/get_descendants>
+on a
+L<tree|DBIx::Tree::MaterializedPath>
+or a
+L<node|DBIx::Tree::MaterializedPath::Node>
+to get its descendants as a
+L<DBIx::Tree::MaterializedPath::TreeRepresentation|DBIx::Tree::MaterializedPath::TreeRepresentation>
+object, and then
+L<traverse()|/traverse>
+those descendants.
 
 =head1 METHODS
 
@@ -56,16 +65,17 @@ L<get_descendants()|DBIx::Tree::MaterializedPath::Node/get_descendants>.
 
     $subtree_data =
       DBIx::Tree::MaterializedPath::TreeRepresentation->new($node,
+                                                            $cols_listref,
                                                             $rows_listref,
                                                             $options_hashref);
 
 C<new()> expects a
 L<DBIx::Tree::MaterializedPath::Node|DBIx::Tree::MaterializedPath::Node>
-object (representing the node that this data belongs to), and a
-listref of hashrefs, each of which represents a node row in the
-database.
+object (representing the node that this data belongs to), a listref
+of database column names, and a listref of listrefs, each of which
+represents a node row in the database.
 
-At minimum, each hashref must contain entries for the
+At minimum, each row must contain entries for the
 L<id_column_name|DBIx::Tree::MaterializedPath/id_column_name>
 and the
 L<path_column_name|DBIx::Tree::MaterializedPath/path_column_name>
@@ -73,7 +83,7 @@ as specified in the
 L<DBIx::Tree::MaterializedPath|DBIx::Tree::MaterializedPath>
 constructor.  The rows should be sorted by path in ascending order.
 
-Additionally, the hashref may contain entries for
+Additionally, the row may contain entries for
 any metadata columns which are stored with the nodes.
 
 One L<DBIx::Tree::MaterializedPath::Node> object will be created in
@@ -88,11 +98,15 @@ given node.
 
 sub new
 {
-    my ($class, $node, $rows, @args) = @_;
+    my ($class, $node, $column_names, $rows, @args) = @_;
 
     croak 'Missing node' unless $node;
-    croak 'Invalid node: is not a "DBIx::Tree::MaterializedPath::Node"'
-      unless blessed($node) && $node->isa('DBIx::Tree::MaterializedPath::Node');
+    eval { ref($node) && $node->isa('DBIx::Tree::MaterializedPath::Node') }
+      or
+      do { croak 'Invalid node: not a "DBIx::Tree::MaterializedPath::Node"' };
+
+    croak 'Missing column names' unless $column_names;
+    croak 'Invalid column names' unless ref($column_names) eq 'ARRAY';
 
     croak 'Missing rows' unless $rows;
     croak 'Invalid rows' unless ref($rows) eq 'ARRAY';
@@ -118,14 +132,18 @@ sub new
     #           |   |
     #           G   H
     #
-    # might produce database rows that look like this:
+    # might produce column names that look like this:
+    #
+    # ['id', 'path', 'name']
+    #
+    # and database rows that look like this:
     #
     # [
-    #   {id =>  6, path => "1.2.1",   name => "F"},
-    #   {id =>  7, path => "1.2.1.1", name => "G"},
-    #   {id =>  8, path => "1.2.1.2", name => "H"},
-    #   {id =>  9, path => "1.2.2",   name => "I"},
-    #   {id => 10, path => "1.2.3",   name => "J"},
+    #   [  6, "1.2.1",   "F"],
+    #   [  7, "1.2.1.1", "G"],
+    #   [  8, "1.2.1.2", "H"],
+    #   [  9, "1.2.2",   "I"],
+    #   [ 10, "1.2.3",   "J"],
     # ]
     #
     # which results in the following data structure:
@@ -162,19 +180,37 @@ sub new
     if (@{$rows})
     {
         my $path_col = $root->{_path_column_name};
-        my $path     = $rows->[0]->{$path_col};
-        my $length   = length $path;
+
+        my $ix_path_col = 0;
+        my $found       = 0;
+        foreach my $column_name (@{$column_names})
+        {
+            if ($column_name eq $path_col)
+            {
+                $found++;
+                last;
+            }
+            $ix_path_col++;
+        }
+        croak 'Path column name not found' unless $found;
+
+        my $path   = $rows->[0]->[$ix_path_col];
+        my $length = length $path;
+
         _add_descendant_nodes(
                               {
+                               prev_path   => q{},
+                               prev_length => $length,
+                               nodes       => \@nodes,
+                              },
+                              {
                                root              => $root,
-                               path_col          => $path_col,
-                               nodes             => \@nodes,
+                               ix_path_col       => $ix_path_col,
+                               column_names      => $column_names,
                                num_nodes_ref     => \$num_nodes,
                                rows              => $rows,
-                               prev_path         => $EMPTY_STRING,
-                               prev_length       => $length,
                                ignore_empty_hash => $ignore_empty_hash
-                              }
+                              },
                              );
     }
 
@@ -187,22 +223,24 @@ sub new
 
 sub _add_descendant_nodes
 {
-    my ($args) = @_;
+    my ($args, $invariant_args) = @_;
 
-    my $root              = $args->{root};
-    my $path_col          = $args->{path_col};
-    my $nodes             = $args->{nodes};
-    my $num_nodes_ref     = $args->{num_nodes_ref};
-    my $rows              = $args->{rows};
-    my $prev_path         = $args->{prev_path};
-    my $prev_length       = $args->{prev_length};
-    my $ignore_empty_hash = $args->{ignore_empty_hash};
+    my $prev_path   = $args->{prev_path};
+    my $prev_length = $args->{prev_length};
+    my $nodes       = $args->{nodes};
+
+    my $root              = $invariant_args->{root};
+    my $ix_path_col       = $invariant_args->{ix_path_col};
+    my $column_names      = $invariant_args->{column_names};
+    my $num_nodes_ref     = $invariant_args->{num_nodes_ref};
+    my $rows              = $invariant_args->{rows};
+    my $ignore_empty_hash = $invariant_args->{ignore_empty_hash};
 
     my $node_children = undef;
 
     while (@{$rows})
     {
-        my $path   = $rows->[0]->{$path_col};
+        my $path   = $rows->[0]->[$ix_path_col];
         my $length = length $path;
 
         # If path length is less, we've gone back up
@@ -218,15 +256,11 @@ sub _add_descendant_nodes
         {
             _add_descendant_nodes(
                                   {
-                                   root              => $root,
-                                   path_col          => $path_col,
-                                   nodes             => $node_children,
-                                   num_nodes_ref     => $num_nodes_ref,
-                                   rows              => $rows,
-                                   prev_path         => $prev_path,
-                                   prev_length       => $length,
-                                   ignore_empty_hash => $ignore_empty_hash
-                                  }
+                                   prev_path   => $prev_path,
+                                   prev_length => $length,
+                                   nodes       => $node_children,
+                                  },
+                                  $invariant_args,
                                  );
         }
 
@@ -236,17 +270,19 @@ sub _add_descendant_nodes
         {
             my $row = shift @{$rows};
 
-            if ($row->{$path_col} eq $prev_path)
+            if ($path eq $prev_path)
             {
                 carp "Danger! Found multiple rows with path <$path>";
             }
             else
             {
-                $prev_path = $row->{$path_col};
+                $prev_path = $path;
             }
 
-            my $child = DBIx::Tree::MaterializedPath::Node->new($root);
-            $child->_load_from_hashref($row, $ignore_empty_hash);
+            my %data = map { $_ => shift @{$row} } @{$column_names};
+            my $child = DBIx::Tree::MaterializedPath::Node->new($root,
+                     {data => \%data, ignore_empty_hash => $ignore_empty_hash});
+
             $node_children = [];
             push @{$nodes}, {node => $child, children => $node_children};
             ${$num_nodes_ref}++;

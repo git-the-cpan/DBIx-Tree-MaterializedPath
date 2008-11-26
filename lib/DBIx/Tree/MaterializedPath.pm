@@ -12,11 +12,11 @@ DBIx::Tree::MaterializedPath - fast DBI queries and updates on "materialized pat
 
 =head1 VERSION
 
-Version 0.05
+Version 0.06
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.05');
+use version 0.74; our $VERSION = qv('0.06');
 
 =head1 SYNOPSIS
 
@@ -213,9 +213,10 @@ sub _init
 
     my $dbh = $self->{_dbh};
     croak 'Missing required parameter: dbh' unless $dbh;
-    croak 'Invalid dbh: is not a "DBI::db"' unless ref($dbh) eq 'DBI::db';
+    croak 'Invalid dbh: not a "DBI::db"' unless ref($dbh) eq 'DBI::db';
 
     local $dbh->{PrintError} = 0;    ## no critic (Variables::ProhibitLocalVars)
+    local $dbh->{PrintWarn}  = 0;    ## no critic (Variables::ProhibitLocalVars)
     local $dbh->{RaiseError} = 1;    ## no critic (Variables::ProhibitLocalVars)
 
     # Make sure the tree table exists in the database:
@@ -308,6 +309,7 @@ sub _do_transaction
 
     my $dbh = $self->{_dbh};
     local $dbh->{PrintError} = 0;    ## no critic (Variables::ProhibitLocalVars)
+    local $dbh->{PrintWarn}  = 0;    ## no critic (Variables::ProhibitLocalVars)
     local $dbh->{RaiseError} = 1;    ## no critic (Variables::ProhibitLocalVars)
 
     # If RaiseError is true, begin_work() will:
@@ -365,6 +367,7 @@ sub _create_sth
     my $dbh = $self->{_dbh};
 
     local $dbh->{PrintError} = 0;    ## no critic (Variables::ProhibitLocalVars)
+    local $dbh->{PrintWarn}  = 0;    ## no critic (Variables::ProhibitLocalVars)
     local $dbh->{RaiseError} = 1;    ## no critic (Variables::ProhibitLocalVars)
 
     my $sth = $dbh->prepare_cached($sql, undef, $STH_CACHE_REPLACE);

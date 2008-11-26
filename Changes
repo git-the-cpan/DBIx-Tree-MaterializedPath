@@ -1,5 +1,11 @@
 Revision history for DBIx-Tree-MaterializedPath
 
+0.06    2008-11-25
+        Changed fetchall_arrayref to return array of arrays,
+            instead of array of hashrefs, resulting in a 20-30%
+            speedup for some operations on large trees.
+        Minor POD tweaks.
+
 0.05    2008-11-24
         API change: Changed D::T::MP::Node->get_descendants() to
             return a D::T::MP::TreeRepresentation object instead

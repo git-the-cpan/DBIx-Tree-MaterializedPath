@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 38;
+use Test::More tests => 49;
 
 use DBIx::Tree::MaterializedPath;
 
@@ -20,7 +20,7 @@ SKIP:
 {
     my $dbh;
     eval { $dbh = test_get_dbh() };
-    skip($@, 38) if $@ && chomp $@;
+    skip($@, 49) if $@ && chomp $@;
 
     my ($tree, $childhash) = test_create_test_tree($dbh);
 
@@ -60,6 +60,8 @@ SKIP:
 
     my $foo = bless {}, 'Foo';
 
+    my $column_names = [qw(id path name)];
+
     $msg = 'TreeRepresentation->new() should catch missing node';
     eval {
         $descendants = DBIx::Tree::MaterializedPath::TreeRepresentation->new();
@@ -69,14 +71,37 @@ SKIP:
     $msg = 'TreeRepresentation->new() should catch invalid node';
     eval {
         $descendants =
+          DBIx::Tree::MaterializedPath::TreeRepresentation->new({});
+    };
+    like($@, qr/\binvalid\b .* \bnode\b/ix, $msg);
+
+    $msg = 'TreeRepresentation->new() should catch invalid node';
+    eval {
+        $descendants =
           DBIx::Tree::MaterializedPath::TreeRepresentation->new($foo);
     };
     like($@, qr/\binvalid\b .* \bnode\b/ix, $msg);
 
-    $msg = 'TreeRepresentation->new() should catch missing rows';
+    $msg = 'TreeRepresentation->new() should catch missing column names';
     eval {
         $descendants =
           DBIx::Tree::MaterializedPath::TreeRepresentation->new($tree);
+    };
+    like($@, qr/\bmissing\b .* \bcolumn\b/ix, $msg);
+
+    $msg = 'TreeRepresentation->new() should catch invalid column names';
+    eval {
+        $descendants =
+          DBIx::Tree::MaterializedPath::TreeRepresentation->new($tree,
+                                                          'I AM NOT A LISTREF');
+    };
+    like($@, qr/\binvalid\b .* \bcolumn\b/ix, $msg);
+
+    $msg = 'TreeRepresentation->new() should catch missing rows';
+    eval {
+        $descendants =
+          DBIx::Tree::MaterializedPath::TreeRepresentation->new($tree,
+                                                                $column_names);
     };
     like($@, qr/\bmissing\b .* \brows\b/ix, $msg);
 
@@ -84,21 +109,28 @@ SKIP:
     eval {
         $descendants =
           DBIx::Tree::MaterializedPath::TreeRepresentation->new($tree,
-                                                          'I AM NOT A LISTREF');
+                                           $column_names, 'I AM NOT A LISTREF');
     };
     like($@, qr/\binvalid\b .* \brows\b/ix, $msg);
 
     my $pm = DBIx::Tree::MaterializedPath::PathMapper->new();
 
-    $descendants =
-      DBIx::Tree::MaterializedPath::TreeRepresentation->new(
-                               $tree,
-                               [
-                                {id => 2, path => $pm->map('1.1'), name => "a"},
-                                {id => 3, path => $pm->map('1.2'), name => "b"},
-                                {id => 4, path => $pm->map('1.3'), name => "c"},
-                               ]
-      );
+    my $rows = [
+                [2, $pm->map('1.1'), "a"],
+                [3, $pm->map('1.2'), "b"],
+                [4, $pm->map('1.3'), "c"],
+               ];
+
+    $msg = 'TreeRepresentation->new() should catch missing path column name';
+    eval {
+        $descendants =
+          DBIx::Tree::MaterializedPath::TreeRepresentation->new($tree,
+                                                         ['id', 'name'], $rows);
+    };
+    like($@, qr/\bpath\b .* \bnot\b .* \bfound\b/ix, $msg);
+
+    $descendants = DBIx::Tree::MaterializedPath::TreeRepresentation->new($tree,
+                                                          $column_names, $rows);
 
     $descendants->traverse($coderef);
 
@@ -144,5 +176,29 @@ SKIP:
 
     $msg = 'traverse() operates on no children for leaf node';
     is($count, 0, $msg);
+
+    #####
+
+    $msg = 'get_descendants() returns no data yet using delay_load';
+    $descendants = $tree->get_descendants(delay_load => 1);
+
+    $coderef = sub {
+        my ($node, $parent) = @_;
+        ok(!exists $node->{_data}, $msg);
+    };
+
+    $descendants->traverse($coderef);
+
+    $msg = 'data now loaded using delay_load';
+
+    $coderef = sub {
+        my ($node, $parent) = @_;
+        $text .= $node->data->{name};
+    };
+
+    $text = '';
+    $descendants->traverse($coderef);
+
+    is($text, 'abcdfe', $msg);
 }
 

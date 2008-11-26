@@ -21,11 +21,11 @@ DBIx::Tree::MaterializedPath::PathMapper - manipulates paths for "materialized p
 
 =head1 VERSION
 
-Version 0.05
+Version 0.06
 
 =cut
 
-use version 0.74; our $VERSION = qv('0.05');
+use version 0.74; our $VERSION = qv('0.06');
 
 =head1 SYNOPSIS
 
